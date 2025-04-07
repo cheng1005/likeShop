@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package proto;
+option go_package="./goods";
+
+
+//创建订单
+message AddOrderRequest {
+  uint64 GoodsId = 1;
+  uint64  Num  = 2;
+  uint64  UserId = 3;
+}
+
+message AddOrderResponse {
+  string payUrl = 1;
+}
+
+//订单列表
+message OrderListRequest {
+  uint64 Page = 1;
+  uint64 Size = 2;
+}
+message OrderList{
+  uint64 OrderId = 1;
+  uint64  GoodsId = 2;
+  string  GoodsName = 3;
+  uint64   Num = 4;
+  uint64  Total = 5;
+  string  UserName = 6;
+  uint64  Status = 7;
+}
+message OrderListResponse {
+  repeated OrderList List = 1;
+}
+service GoodsSrv {
+  rpc AddOrder(AddOrderRequest) returns(AddOrderResponse);
+
+  rpc OrderList(OrderListRequest) returns(OrderListResponse);
+
+}

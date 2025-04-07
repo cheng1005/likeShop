@@ -1,6 +1,231 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="GoORMHelperCache">
+    <option name="schemaMapping">
+      <map>
+        <entry key="AddOrderReq">
+          <value>
+            <set>
+              <option value="file://$PROJECT_DIR$/api-gateway/internal/request/goods.go" />
+            </set>
+          </value>
+        </entry>
+        <entry key="AppConfig">
+          <value>
+            <set>
+              <option value="file://$PROJECT_DIR$/goods-server/basic/config/config.go" />
+            </set>
+          </value>
+        </entry>
+        <entry key="Consul">
+          <value>
+            <set>
+              <option value="file://$PROJECT_DIR$/api-gateway/internal/untils/consul.go" />
+            </set>
+          </value>
+        </entry>
+        <entry key="ConsulRegister">
+          <value>
+            <set>
+              <option value="file://$PROJECT_DIR$/api-gateway/internal/untils/consul.go" />
+            </set>
+          </value>
+        </entry>
+        <entry key="Goods">
+          <value>
+            <set>
+              <option value="file://$PROJECT_DIR$/goods-server/internal/model/goods.go" />
+            </set>
+          </value>
+        </entry>
+        <entry key="Order">
+          <value>
+            <set>
+              <option value="file://$PROJECT_DIR$/goods-server/internal/model/goods.go" />
+            </set>
+          </value>
+        </entry>
+        <entry key="OrderListReq">
+          <value>
+            <set>
+              <option value="file://$PROJECT_DIR$/api-gateway/internal/request/goods.go" />
+            </set>
+          </value>
+        </entry>
+        <entry key="Server">
+          <value>
+            <set>
+              <option value="file://$PROJECT_DIR$/goods-server/internal/handler/goods.go" />
+            </set>
+          </value>
+        </entry>
+        <entry key="User">
+          <value>
+            <set>
+              <option value="file://$PROJECT_DIR$/goods-server/internal/model/goods.go" />
+            </set>
+          </value>
+        </entry>
+        <entry key="consulRegister">
+          <value>
+            <set>
+              <option value="file://$PROJECT_DIR$/api-gateway/internal/untils/consul.go" />
+            </set>
+          </value>
+        </entry>
+      </map>
+    </option>
+    <option name="scannedPathMapping">
+      <map>
+        <entry key="file://$PROJECT_DIR$/api-gateway/basic/cmd/main.go">
+          <value>
+            <ScannedPath>
+              <option name="lastModified" value="1743994756480" />
+            </ScannedPath>
+          </value>
+        </entry>
+        <entry key="file://$PROJECT_DIR$/api-gateway/basic/init/init.go">
+          <value>
+            <ScannedPath>
+              <option name="lastModified" value="1743996378771" />
+            </ScannedPath>
+          </value>
+        </entry>
+        <entry key="file://$PROJECT_DIR$/api-gateway/global/global.go">
+          <value>
+            <ScannedPath>
+              <option name="lastModified" value="1743992617711" />
+            </ScannedPath>
+          </value>
+        </entry>
+        <entry key="file://$PROJECT_DIR$/api-gateway/internal/handler/goods.go">
+          <value>
+            <ScannedPath>
+              <option name="lastModified" value="1743992968574" />
+            </ScannedPath>
+          </value>
+        </entry>
+        <entry key="file://$PROJECT_DIR$/api-gateway/internal/request/goods.go">
+          <value>
+            <ScannedPath>
+              <option name="lastModified" value="1743992928399" />
+              <option name="schema">
+                <list>
+                  <option value="AddOrderReq" />
+                  <option value="OrderListReq" />
+                </list>
+              </option>
+            </ScannedPath>
+          </value>
+        </entry>
+        <entry key="file://$PROJECT_DIR$/api-gateway/internal/untils/consul.go">
+          <value>
+            <ScannedPath>
+              <option name="lastModified" value="1743994001763" />
+              <option name="schema">
+                <list>
+                  <option value="Consul" />
+                  <option value="ConsulRegister" />
+                </list>
+              </option>
+            </ScannedPath>
+          </value>
+        </entry>
+        <entry key="file://$PROJECT_DIR$/api-gateway/internal/untils/zap.go">
+          <value>
+            <ScannedPath>
+              <option name="lastModified" value="1743994674219" />
+            </ScannedPath>
+          </value>
+        </entry>
+        <entry key="file://$PROJECT_DIR$/api-gateway/router/router.go">
+          <value>
+            <ScannedPath>
+              <option name="lastModified" value="1743992448320" />
+            </ScannedPath>
+          </value>
+        </entry>
+        <entry key="file://$PROJECT_DIR$/goods-server/basic/cmd/main.go">
+          <value>
+            <ScannedPath>
+              <option name="lastModified" value="1743993069171" />
+            </ScannedPath>
+          </value>
+        </entry>
+        <entry key="file://$PROJECT_DIR$/goods-server/basic/config/config.go">
+          <value>
+            <ScannedPath>
+              <option name="lastModified" value="1743990914409" />
+              <option name="schema">
+                <list>
+                  <option value="AppConfig" />
+                </list>
+              </option>
+            </ScannedPath>
+          </value>
+        </entry>
+        <entry key="file://$PROJECT_DIR$/goods-server/basic/init/init.go">
+          <value>
+            <ScannedPath>
+              <option name="lastModified" value="1743994549851" />
+            </ScannedPath>
+          </value>
+        </entry>
+        <entry key="file://$PROJECT_DIR$/goods-server/global/global.go">
+          <value>
+            <ScannedPath>
+              <option name="lastModified" value="1743991182834" />
+            </ScannedPath>
+          </value>
+        </entry>
+        <entry key="file://$PROJECT_DIR$/goods-server/internal/handler/goods.go">
+          <value>
+            <ScannedPath>
+              <option name="lastModified" value="1743995898288" />
+              <option name="schema">
+                <list>
+                  <option value="Server" />
+                </list>
+              </option>
+            </ScannedPath>
+          </value>
+        </entry>
+        <entry key="file://$PROJECT_DIR$/goods-server/internal/model/goods.go">
+          <value>
+            <ScannedPath>
+              <option name="lastModified" value="1743991368448" />
+              <option name="schema">
+                <list>
+                  <option value="Goods" />
+                  <option value="Order" />
+                  <option value="User" />
+                </list>
+              </option>
+            </ScannedPath>
+          </value>
+        </entry>
+        <entry key="file://$PROJECT_DIR$/goods-server/pkg/alipay.go">
+          <value>
+            <ScannedPath>
+              <option name="lastModified" value="1743995799337" />
+            </ScannedPath>
+          </value>
+        </entry>
+      </map>
+    </option>
+    <option name="tableStructMapping">
+      <map>
+        <entry key="add_order_req" value="AddOrderReq" />
+        <entry key="app_config" value="AppConfig" />
+        <entry key="consul" value="Consul" />
+        <entry key="consul_register" value="ConsulRegister" />
+        <entry key="goods" value="Goods" />
+        <entry key="order" value="Order" />
+        <entry key="order_list_req" value="OrderListReq" />
+        <entry key="server" value="Server" />
+        <entry key="user" value="User" />
+      </map>
+    </option>
     <option name="lastTimeChecked" value="1743988639772" />
   </component>
 </project>
