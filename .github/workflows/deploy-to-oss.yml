@@ -1,43 +1,36 @@
-name: 构建并部署到 MinIO
+name: 部署后端项目到 MinIO
 on:
   push:
     branches: [ main ]  # 推送 main 分支触发
 jobs:
-  build-and-deploy:
+  deploy-to-minio:
     runs-on: ubuntu-latest
     steps:
       # 1. 拉取代码
       - name: 拉取代码
         uses: actions/checkout@v4
 
-      # 2. 配置 Node.js 环境
-      - name: 设置 Node.js 环境
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-          cache: 'npm'
-
-      # 3. 安装依赖 + 构建（根据项目实际命令调整，如 yarn/pnpm）
-      - name: 安装依赖并构建
-        run: |
-          npm install
-          npm run build  # 若用 yarn 则替换为 yarn && yarn build
-        continue-on-error: false  # 构建失败终止流程
-
-      # 4. 安装 MinIO 客户端（mc）
+      # 2. 安装 MinIO 客户端（mc）
       - name: 安装 MinIO 客户端
         run: |
           wget https://dl.min.io/client/mc/release/linux-amd64/mc
           chmod +x mc
-          # 配置 MinIO 连接（API 端口用 9000，替换为你的实际 AccessKey/SecretKey）
+          # 配置 MinIO 连接（使用 API 端口 9000）
           ./mc config host add myminio http://14.103.235.216:9000 ${{ secrets.MINIO_ACCESS_KEY }} ${{ secrets.MINIO_SECRET_KEY }}
         continue-on-error: false  # 连接失败终止流程
 
-      # 5. 同步构建产物到 MinIO（确认存储桶名称为 mybucket）
-      - name: 同步文件到 MinIO
+      # 3. 验证 MinIO 连接并同步项目文件
+      - name: 同步项目文件到 MinIO
         run: |
-          # 先验证连接是否正常（列出存储桶，方便排查问题）
-          ./mc ls myminio 
-          # 同步 dist 目录到 MinIO 的 mybucket 存储桶（目录名按需修改）
-          ./mc cp -r -f dist/ myminio/mybucket/  
+          # 验证连接是否正常
+          ./mc ls myminio
+          
+          # 同步所有项目文件到 MinIO 的 mybucket 存储桶
+          # 排除不需要上传的文件（如 .git、node_modules 等）
+          ./mc cp -r -f \
+            --exclude ".git/" \
+            --exclude ".github/" \
+            --exclude "node_modules/" \
+            ./ myminio/mybucket/
         continue-on-error: false  # 同步失败终止流程
+    
