@@ -10,27 +10,25 @@ jobs:
       - name: 拉取代码
         uses: actions/checkout@v4
 
-      # 2. 安装 MinIO 客户端（mc）并配置连接
-      - name: 安装 MinIO 客户端并配置连接
+      # 2. 安装 MinIO 客户端（指定兼容版本）
+      - name: 安装兼容版 MinIO 客户端
         run: |
-          # 下载 mc 客户端
-          wget https://dl.min.io/client/mc/release/linux-amd64/mc
+          # 下载明确兼容的旧版本（避免最新版与服务端不兼容）
+          wget https://dl.min.io/client/mc/release/linux-amd64/archive/mc.RELEASE.2023-05-04T21-44-30Z
+          mv mc.RELEASE.2023-05-04T21-44-30Z mc
           chmod +x mc
           
-          # 关键修正：使用 alias 命令替代 config 命令（兼容旧版本）
+          # 配置连接（使用最基础的 alias 命令）
           ./mc alias set myminio http://14.103.235.216:9000 ${{ secrets.MINIO_ACCESS_KEY }} ${{ secrets.MINIO_SECRET_KEY }}
         continue-on-error: false
 
-      # 3. 验证连接并同步文件
+      # 3. 同步文件（仅使用旧版本支持的基础参数）
       - name: 同步项目文件到 MinIO
         run: |
-          # 验证连接是否成功
+          # 验证连接
           ./mc ls myminio
           
-          # 同步文件到存储桶
-          ./mc cp -r -f \
-            --exclude ".git/" \
-            --exclude ".github/" \
-            ./ myminio/mybucket/
+          # 核心修正：仅保留 -r（递归）和 --force（强制覆盖），移除所有可能不兼容的参数
+          ./mc cp -r --force ./ myminio/mybucket/
         continue-on-error: false
     
