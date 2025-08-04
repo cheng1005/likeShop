@@ -16,30 +16,39 @@ jobs:
           echo "当前项目根目录文件列表："
           ls -la
           echo "子目录列表："
-          find . -maxdepth 1 -type d
+          find . -maxdepth 2 -type d  # 加深层级查看，适配实际目录
 
-      # 编译 api 服务（请根据实际路径修改 ./api）
-      - name: 编译 api 服务
+      # 编译 api-gateway 服务
+      - name: 编译 api-gateway 服务
         run: |
-          # 关键：修改为实际的api服务目录路径
-          # 例如：如果api在services/api目录，改为 cd ./services/api
-          cd ./api-service  # 替换为你的实际api目录名称
+          API_DIR="./api-gateway/basic/cmd"  # 定位到 main.go 所在目录
+          echo "检查 API 服务目录: $API_DIR"
+          if [ ! -d "$API_DIR" ]; then
+            echo "错误: API 服务目录 $API_DIR 不存在"
+            exit 1
+          fi
           
-          go mod tidy
+          cd "$API_DIR"
+          go mod tidy  # 基于 api-gateway 下的 go.mod 处理依赖
           go build -o api-service main.go
-          zip -r ../api-deploy.zip api-service
+          zip -r ../../../api-deploy.zip api-service  # 回到根目录打包
 
-      # 编译 server 服务（请根据实际路径修改 ./server）
-      - name: 编译 server 服务
+      # 编译 goods-server 服务
+      - name: 编译 goods-server 服务
         run: |
-          # 关键：修改为实际的server服务目录路径
-          cd ./server-service  # 替换为你的实际server目录名称
+          SERVER_DIR="./goods-server/basic/cmd"  # 定位到 main.go 所在目录
+          echo "检查 Server 服务目录: $SERVER_DIR"
+          if [ ! -d "$SERVER_DIR" ]; then
+            echo "错误: Server 服务目录 $SERVER_DIR 不存在"
+            exit 1
+          fi
           
-          go mod tidy
+          cd "$SERVER_DIR"
+          go mod tidy  # 基于 goods-server 下的 go.mod 处理依赖
           go build -o server-service main.go
-          zip -r ../server-deploy.zip server-service
+          zip -r ../../../server-deploy.zip server-service  # 回到根目录打包
 
-      # 部署步骤保持不变（使用修正后的压缩包）
+      # 部署到服务器
       - name: 部署到服务器
         uses: appleboy/ssh-action@master
         with:
@@ -51,21 +60,21 @@ jobs:
             BASE_PATH="/opt/microservices"
             mkdir -p $BASE_PATH/{api,server,config}
             
-            # 部署配置文件
+            # 部署配置文件（假设 dev.yaml 在项目根目录）
             cd $BASE_PATH/config
-            scp -P ${{ secrets.SERVER_SSH_PORT || 22 }} ${{ github.workspace }}/dev.yaml $USER@$HOST:$BASE_PATH/config/
-            chmod 644 dev.yaml
+            cp ${{ github.workspace }}/dev.yaml $BASE_PATH/config/
+            chmod 644 $BASE_PATH/config/dev.yaml
             
-            # 部署server服务
+            # 部署 server 服务
             cd $BASE_PATH/server
-            scp -P ${{ secrets.SERVER_SSH_PORT || 22 }} ${{ github.workspace }}/server-deploy.zip $USER@$HOST:$BASE_PATH/server/
+            cp ${{ github.workspace }}/server-deploy.zip $BASE_PATH/server/
             unzip -o server-deploy.zip
             chmod +x server-service
             pkill -f "server-service" || true
             sleep 2
             nohup ./server-service --config $BASE_PATH/config/dev.yaml > server.log 2>&1 &
             
-            # 等待server启动
+            # 等待 server 启动
             for i in {1..15}; do
               if pgrep -f "server-service" > /dev/null && nc -z localhost 8081; then
                 echo "server 服务已就绪"
@@ -74,15 +83,14 @@ jobs:
               sleep 2
             done
             
-            # 编译 api 服务（修正目录路径）
-      - name: 编译 api 服务
-        run: |
-          # 关键：替换为你的实际项目中实际的 api 服务目录
-          cd ./api-gateway  # 例如：如果目录是api，则改为 cd ./api
-          
-          go mod tidy
-          go build -o api-service main.go
-          zip -r ../api-deploy.zip api-service
+            # 部署 api 服务
+            cd $BASE_PATH/api
+            cp ${{ github.workspace }}/api-deploy.zip $BASE_PATH/api/
+            unzip -o api-deploy.zip
+            chmod +x api-service
+            pkill -f "api-service" || true
+            sleep 2
+            nohup ./api-service --config $BASE_PATH/config/dev.yaml > api.log 2>&1 &
             
             # 验证服务
             sleep 3
@@ -93,4 +101,3 @@ jobs:
               cat $BASE_PATH/api/api.log
               exit 1
             fi
-    
