@@ -1,74 +1,109 @@
-name: 部署到服务器并运行服务
+name: 部署微服务（api依赖server+主目录配置）
 on:
   push:
-    branches: [ main ]  # 推送到主分支时触发部署
+    branches: [ main ]
 
 jobs:
-  deploy-and-run:
+  deploy-microservices:
     runs-on: ubuntu-latest
     steps:
       # 1. 拉取代码
       - name: 拉取最新代码
         uses: actions/checkout@v4
 
-      # 2. 编译项目（以Go为例，其他语言请调整）
-      - name: 编译应用程序
+      # 2. 编译 api 服务
+      - name: 编译 api 服务
         run: |
-          # 安装对应语言环境（Go示例）
-          go version || (apt-get update && apt-get install -y golang)
-          
-          # 处理依赖并编译
+          cd ./api
           go mod tidy
-          go build -o app main.go  # 生成可执行文件app
-          
-          # 打包必要文件（程序+配置）
-          zip -r deploy.zip app configs/  # 根据实际文件调整
+          go build -o api-service main.go
+          # 只打包可执行文件（配置文件统一处理）
+          zip -r ../api-deploy.zip api-service
 
-      # 3. 部署到你的服务器并启动服务
+      # 3. 编译 server 服务
+      - name: 编译 server 服务
+        run: |
+          cd ./server
+          go mod tidy
+          go build -o server-service main.go
+          # 只打包可执行文件
+          zip -r ../server-deploy.zip server-service
+
+      # 4. 部署到服务器并按顺序启动服务
       - name: 部署到服务器
         uses: appleboy/ssh-action@master
         with:
-          host: ${{ secrets.SERVER_IP }}        # 你的服务器IP（在GitHub Secrets配置）
-          username: ${{ secrets.SERVER_USER }}  # 服务器登录用户（如root）
-          key: ${{ secrets.SSH_PRIVATE_KEY }}   # SSH私钥（用于免密登录）
-          port: ${{ secrets.SERVER_SSH_PORT || 22 }}  # SSH端口，默认22
-          
-          # 在服务器上执行的命令
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SERVER_SSH_PORT || 22 }}
           script: |
-            # 服务器上的部署目录（提前创建好）
-            DEPLOY_PATH="/opt/my-service"
-            mkdir -p $DEPLOY_PATH
-            cd $DEPLOY_PATH
+            # 服务器部署根目录
+            BASE_PATH="/opt/microservices"
+            mkdir -p $BASE_PATH/{api,server,config}  # 新增config目录存放配置文件
             
-            # 备份当前运行的版本（可选，用于回滚）
-            if [ -f "app" ]; then
-              mv app app_backup_$(date +%Y%m%d_%H%M%S)
-            fi
+            # --------------------------
+            # 1. 部署共享配置文件（主目录的dev.yaml）
+            # --------------------------
+            cd $BASE_PATH/config
+            # 从代码仓库主目录复制配置文件
+            scp -P ${{ secrets.SERVER_SSH_PORT || 22 }} ${{ github.workspace }}/dev.yaml $USER@$HOST:$BASE_PATH/config/
+            chmod 644 dev.yaml  # 配置文件只读权限
             
-            # 清除旧的部署包并接收新包
-            rm -f deploy.zip
-            scp -P ${{ secrets.SERVER_SSH_PORT || 22 }} ${{ github.workspace }}/deploy.zip $USER@$HOST:$DEPLOY_PATH/
-            unzip -o deploy.zip  # 强制解压覆盖
-            chmod +x app  # 确保可执行权限
+            # --------------------------
+            # 2. 部署并启动 server 服务（先启动）
+            # --------------------------
+            cd $BASE_PATH/server
+            rm -f server-deploy.zip
+            scp -P ${{ secrets.SERVER_SSH_PORT || 22 }} ${{ github.workspace }}/server-deploy.zip $USER@$HOST:$BASE_PATH/server/
+            unzip -o server-deploy.zip
+            chmod +x server-service
             
-            # 停止正在运行的服务（如果存在）
-            if pgrep -f "app" > /dev/null; then
-              pkill -f "app"
-              echo "已停止旧服务进程"
-              sleep 2  # 等待进程完全退出
-            fi
+            # 停止旧的 server 服务
+            pkill -f "server-service" || true
+            sleep 2
             
-            # 启动新服务（nohup确保后台运行，不受终端关闭影响）
-            nohup ./app > service.log 2>&1 &
+            # 启动 server 服务（指定配置文件路径）
+            nohup ./server-service --config $BASE_PATH/config/dev.yaml > server.log 2>&1 &
+            echo "server 服务启动中..."
             
-            # 验证服务是否启动成功
+            # 等待 server 服务完全启动（关键：确保api启动前server已就绪）
+            for i in {1..15}; do
+              if pgrep -f "server-service" > /dev/null && nc -z localhost 8081; then
+                echo "server 服务已就绪"
+                break
+              fi
+              echo "等待server启动...（第 $i 次尝试）"
+              sleep 2
+            done
+            
+            # --------------------------
+            # 3. 部署并启动 api 服务（后启动）
+            # --------------------------
+            cd $BASE_PATH/api
+            rm -f api-deploy.zip
+            scp -P ${{ secrets.SERVER_SSH_PORT || 22 }} ${{ github.workspace }}/api-deploy.zip $USER@$HOST:$BASE_PATH/api/
+            unzip -o api-deploy.zip
+            chmod +x api-service
+            
+            # 停止旧的 api 服务
+            pkill -f "api-service" || true
+            sleep 2
+            
+            # 启动 api 服务（指定配置文件路径）
+            nohup ./api-service --config $BASE_PATH/config/dev.yaml > api.log 2>&1 &
+            echo "api 服务启动中..."
+            
+            # 验证所有服务状态
             sleep 3
-            if pgrep -f "app" > /dev/null; then
-              echo "服务启动成功，进程ID: $(pgrep -f 'app')"
-              echo "日志路径: $DEPLOY_PATH/service.log"
+            if pgrep -f "server-service" && pgrep -f "api-service" && nc -z localhost 8080; then
+              echo "所有微服务启动成功"
+              echo "api服务地址: http://${{ secrets.SERVER_IP }}:8080"
+              echo "server服务地址: http://${{ secrets.SERVER_IP }}:8081"
             else
-              echo "服务启动失败，查看日志:"
-              cat service.log
-              exit 1  # 启动失败则工作流报错
+              echo "服务启动失败，查看日志："
+              cat $BASE_PATH/server/server.log
+              cat $BASE_PATH/api/api.log
+              exit 1
             fi
     
