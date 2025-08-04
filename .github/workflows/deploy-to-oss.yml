@@ -74,14 +74,15 @@ jobs:
               sleep 2
             done
             
-            # 部署api服务
-            cd $BASE_PATH/api
-            scp -P ${{ secrets.SERVER_SSH_PORT || 22 }} ${{ github.workspace }}/api-deploy.zip $USER@$HOST:$BASE_PATH/api/
-            unzip -o api-deploy.zip
-            chmod +x api-service
-            pkill -f "api-service" || true
-            sleep 2
-            nohup ./api-service --config $BASE_PATH/config/dev.yaml > api.log 2>&1 &
+            # 编译 api 服务（修正目录路径）
+      - name: 编译 api 服务
+        run: |
+          # 关键：替换为你的实际项目中实际的 api 服务目录
+          cd ./api-gateway  # 例如：如果目录是api，则改为 cd ./api
+          
+          go mod tidy
+          go build -o api-service main.go
+          zip -r ../api-deploy.zip api-service
             
             # 验证服务
             sleep 3
