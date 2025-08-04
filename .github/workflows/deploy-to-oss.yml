@@ -1,4 +1,4 @@
-name: 部署微服务（修正ZIP文件问题）
+name: 部署微服务（修复工作区访问问题）
 on:
   push:
     branches: [ main ]
@@ -10,76 +10,86 @@ jobs:
       - name: 拉取最新代码
         uses: actions/checkout@v4
 
-      # 显示项目目录结构（用于调试路径问题）
-      - name: 查看项目目录结构
+      # 显示项目目录结构和工作区信息
+      - name: 查看环境和目录结构
         run: |
-          echo "当前项目根目录文件列表："
-          ls -la
+          echo "GitHub工作区路径: ${{ github.workspace }}"
+          echo "当前目录: $(pwd)"
+          echo "工作区文件列表："
+          ls -la ${{ github.workspace }}
           echo "子目录列表："
-          find . -maxdepth 3 -type d
+          find ${{ github.workspace }} -maxdepth 3 -type d
 
       # 编译 api-gateway 服务
       - name: 编译 api-gateway 服务
         run: |
-          API_DIR="./api-gateway/basic/cmd"
+          API_DIR="${{ github.workspace }}/api-gateway/basic/cmd"
           echo "检查 API 服务目录: $API_DIR"
           if [ ! -d "$API_DIR" ]; then
             echo "错误: API 服务目录 $API_DIR 不存在"
             exit 1
           fi
           
-          # 保存当前工作目录（项目根目录）
-          ROOT_DIR=$(pwd)
-          
           cd "$API_DIR"
           go mod tidy
           go build -o api-service main.go
           
-          # 使用绝对路径确保压缩包生成到项目根目录
-          zip -r "$ROOT_DIR/api-deploy.zip" api-service
+          # 生成压缩包到工作区根目录
+          zip -r "${{ github.workspace }}/api-deploy.zip" api-service
           
           # 验证压缩包是否生成
-          if [ ! -f "$ROOT_DIR/api-deploy.zip" ]; then
+          if [ ! -f "${{ github.workspace }}/api-deploy.zip" ]; then
             echo "错误: API 压缩包未生成"
             exit 1
           fi
-          echo "API 压缩包已生成: $ROOT_DIR/api-deploy.zip"
+          echo "API 压缩包已生成: ${{ github.workspace }}/api-deploy.zip"
 
       # 编译 goods-server 服务
       - name: 编译 goods-server 服务
         run: |
-          SERVER_DIR="./goods-server/basic/cmd"
+          SERVER_DIR="${{ github.workspace }}/goods-server/basic/cmd"
           echo "检查 Server 服务目录: $SERVER_DIR"
           if [ ! -d "$SERVER_DIR" ]; then
             echo "错误: Server 服务目录 $SERVER_DIR 不存在"
             exit 1
           fi
           
-          # 保存当前工作目录（项目根目录）
-          ROOT_DIR=$(pwd)
-          
           cd "$SERVER_DIR"
           go mod tidy
           go build -o server-service main.go
           
-          # 使用绝对路径确保压缩包生成到项目根目录
-          zip -r "$ROOT_DIR/server-deploy.zip" server-service
+          # 生成压缩包到工作区根目录
+          zip -r "${{ github.workspace }}/server-deploy.zip" server-service
           
           # 验证压缩包是否生成
-          if [ ! -f "$ROOT_DIR/server-deploy.zip" ]; then
+          if [ ! -f "${{ github.workspace }}/server-deploy.zip" ]; then
             echo "错误: Server 压缩包未生成"
             exit 1
           fi
-          echo "Server 压缩包已生成: $ROOT_DIR/server-deploy.zip"
+          echo "Server 压缩包已生成: ${{ github.workspace }}/server-deploy.zip"
 
-      # 显示根目录文件，确认压缩包存在
+      # 确认压缩包存在
       - name: 确认压缩包存在
         run: |
-          echo "项目根目录文件列表（确认压缩包）："
-          ls -la
+          echo "工作区根目录文件列表："
+          ls -la ${{ github.workspace }}
+          echo "API压缩包信息："
+          ls -la ${{ github.workspace }}/api-deploy.zip || echo "API压缩包不存在"
+          echo "Server压缩包信息："
+          ls -la ${{ github.workspace }}/server-deploy.zip || echo "Server压缩包不存在"
 
-      # 部署到服务器
-      - name: 部署到服务器
+      # 部署到服务器 - 使用SCP先传输文件，再执行部署脚本
+      - name: 传输文件到服务器
+        uses: appleboy/scp-action@master
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SERVER_SSH_PORT || 22 }}
+          source: "${{ github.workspace }}/api-deploy.zip,${{ github.workspace }}/server-deploy.zip,${{ github.workspace }}/dev.yaml"
+          target: "/tmp"
+
+      - name: 在服务器上部署服务
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.SERVER_IP }}
@@ -90,22 +100,24 @@ jobs:
             BASE_PATH="/opt/microservices"
             mkdir -p $BASE_PATH/{api,server,config}
             
-            # 确认工作区文件
-            echo "GitHub工作区文件："
-            ls -la ${{ github.workspace }}
+            # 确认传输的文件
+            echo "临时目录文件："
+            ls -la /tmp
             
             # 部署配置文件
-            if [ -f "${{ github.workspace }}/dev.yaml" ]; then
-              cp ${{ github.workspace }}/dev.yaml $BASE_PATH/config/
+            if [ -f "/tmp/dev.yaml" ]; then
+              cp /tmp/dev.yaml $BASE_PATH/config/
               chmod 644 $BASE_PATH/config/dev.yaml
             else
               echo "警告：配置文件 dev.yaml 未找到"
+              # 如果配置文件不是必须的，可以注释掉下面的exit 1
+              # exit 1
             fi
             
             # 部署 server 服务
-            if [ -f "${{ github.workspace }}/server-deploy.zip" ]; then
+            if [ -f "/tmp/server-deploy.zip" ]; then
               cd $BASE_PATH/server
-              cp ${{ github.workspace }}/server-deploy.zip .
+              cp /tmp/server-deploy.zip .
               unzip -o server-deploy.zip
               chmod +x server-service
               pkill -f "server-service" || true
@@ -126,9 +138,9 @@ jobs:
             done
             
             # 部署 api 服务
-            if [ -f "${{ github.workspace }}/api-deploy.zip" ]; then
+            if [ -f "/tmp/api-deploy.zip" ]; then
               cd $BASE_PATH/api
-              cp ${{ github.workspace }}/api-deploy.zip .
+              cp /tmp/api-deploy.zip .
               unzip -o api-deploy.zip
               chmod +x api-service
               pkill -f "api-service" || true
@@ -138,6 +150,9 @@ jobs:
               echo "错误：api-deploy.zip 未找到"
               exit 1
             fi
+            
+            # 清理临时文件
+            rm -f /tmp/api-deploy.zip /tmp/server-deploy.zip /tmp/dev.yaml
             
             # 验证服务
             sleep 3
