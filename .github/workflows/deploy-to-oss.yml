@@ -1,4 +1,4 @@
-name: 部署微服务（修正目录路径）
+name: 部署微服务（修正ZIP文件问题）
 on:
   push:
     branches: [ main ]
@@ -16,37 +16,67 @@ jobs:
           echo "当前项目根目录文件列表："
           ls -la
           echo "子目录列表："
-          find . -maxdepth 2 -type d  # 加深层级查看，适配实际目录
+          find . -maxdepth 3 -type d
 
       # 编译 api-gateway 服务
       - name: 编译 api-gateway 服务
         run: |
-          API_DIR="./api-gateway/basic/cmd"  # 定位到 main.go 所在目录
+          API_DIR="./api-gateway/basic/cmd"
           echo "检查 API 服务目录: $API_DIR"
           if [ ! -d "$API_DIR" ]; then
             echo "错误: API 服务目录 $API_DIR 不存在"
             exit 1
           fi
           
+          # 保存当前工作目录（项目根目录）
+          ROOT_DIR=$(pwd)
+          
           cd "$API_DIR"
-          go mod tidy  # 基于 api-gateway 下的 go.mod 处理依赖
+          go mod tidy
           go build -o api-service main.go
-          zip -r ../../../api-deploy.zip api-service  # 回到根目录打包
+          
+          # 使用绝对路径确保压缩包生成到项目根目录
+          zip -r "$ROOT_DIR/api-deploy.zip" api-service
+          
+          # 验证压缩包是否生成
+          if [ ! -f "$ROOT_DIR/api-deploy.zip" ]; then
+            echo "错误: API 压缩包未生成"
+            exit 1
+          fi
+          echo "API 压缩包已生成: $ROOT_DIR/api-deploy.zip"
 
       # 编译 goods-server 服务
       - name: 编译 goods-server 服务
         run: |
-          SERVER_DIR="./goods-server/basic/cmd"  # 定位到 main.go 所在目录
+          SERVER_DIR="./goods-server/basic/cmd"
           echo "检查 Server 服务目录: $SERVER_DIR"
           if [ ! -d "$SERVER_DIR" ]; then
             echo "错误: Server 服务目录 $SERVER_DIR 不存在"
             exit 1
           fi
           
+          # 保存当前工作目录（项目根目录）
+          ROOT_DIR=$(pwd)
+          
           cd "$SERVER_DIR"
-          go mod tidy  # 基于 goods-server 下的 go.mod 处理依赖
+          go mod tidy
           go build -o server-service main.go
-          zip -r ../../../server-deploy.zip server-service  # 回到根目录打包
+          
+          # 使用绝对路径确保压缩包生成到项目根目录
+          zip -r "$ROOT_DIR/server-deploy.zip" server-service
+          
+          # 验证压缩包是否生成
+          if [ ! -f "$ROOT_DIR/server-deploy.zip" ]; then
+            echo "错误: Server 压缩包未生成"
+            exit 1
+          fi
+          echo "Server 压缩包已生成: $ROOT_DIR/server-deploy.zip"
+
+      # 显示根目录文件，确认压缩包存在
+      - name: 确认压缩包存在
+        run: |
+          echo "项目根目录文件列表（确认压缩包）："
+          ls -la
 
       # 部署到服务器
       - name: 部署到服务器
@@ -60,19 +90,31 @@ jobs:
             BASE_PATH="/opt/microservices"
             mkdir -p $BASE_PATH/{api,server,config}
             
-            # 部署配置文件（假设 dev.yaml 在项目根目录）
-            cd $BASE_PATH/config
-            cp ${{ github.workspace }}/dev.yaml $BASE_PATH/config/
-            chmod 644 $BASE_PATH/config/dev.yaml
+            # 确认工作区文件
+            echo "GitHub工作区文件："
+            ls -la ${{ github.workspace }}
+            
+            # 部署配置文件
+            if [ -f "${{ github.workspace }}/dev.yaml" ]; then
+              cp ${{ github.workspace }}/dev.yaml $BASE_PATH/config/
+              chmod 644 $BASE_PATH/config/dev.yaml
+            else
+              echo "警告：配置文件 dev.yaml 未找到"
+            fi
             
             # 部署 server 服务
-            cd $BASE_PATH/server
-            cp ${{ github.workspace }}/server-deploy.zip $BASE_PATH/server/
-            unzip -o server-deploy.zip
-            chmod +x server-service
-            pkill -f "server-service" || true
-            sleep 2
-            nohup ./server-service --config $BASE_PATH/config/dev.yaml > server.log 2>&1 &
+            if [ -f "${{ github.workspace }}/server-deploy.zip" ]; then
+              cd $BASE_PATH/server
+              cp ${{ github.workspace }}/server-deploy.zip .
+              unzip -o server-deploy.zip
+              chmod +x server-service
+              pkill -f "server-service" || true
+              sleep 2
+              nohup ./server-service --config $BASE_PATH/config/dev.yaml > server.log 2>&1 &
+            else
+              echo "错误：server-deploy.zip 未找到"
+              exit 1
+            fi
             
             # 等待 server 启动
             for i in {1..15}; do
@@ -84,13 +126,18 @@ jobs:
             done
             
             # 部署 api 服务
-            cd $BASE_PATH/api
-            cp ${{ github.workspace }}/api-deploy.zip $BASE_PATH/api/
-            unzip -o api-deploy.zip
-            chmod +x api-service
-            pkill -f "api-service" || true
-            sleep 2
-            nohup ./api-service --config $BASE_PATH/config/dev.yaml > api.log 2>&1 &
+            if [ -f "${{ github.workspace }}/api-deploy.zip" ]; then
+              cd $BASE_PATH/api
+              cp ${{ github.workspace }}/api-deploy.zip .
+              unzip -o api-deploy.zip
+              chmod +x api-service
+              pkill -f "api-service" || true
+              sleep 2
+              nohup ./api-service --config $BASE_PATH/config/dev.yaml > api.log 2>&1 &
+            else
+              echo "错误：api-deploy.zip 未找到"
+              exit 1
+            fi
             
             # 验证服务
             sleep 3
