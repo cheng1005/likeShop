@@ -10,27 +10,24 @@ jobs:
       - name: 拉取代码
         uses: actions/checkout@v4
 
-      # 2. 安装 MinIO 客户端（使用有效下载链接）
+      # 2. 安装 MinIO 客户端（使用官方最新版，避免过旧版本）
       - name: 安装 MinIO 客户端
         run: |
-          # 使用官方最新稳定版链接（确保存在）
-          wget https://dl.min.io/client/mc/release/linux-amd64/mc
+          # 强制重新下载最新版，避免缓存的旧版本
+          wget -O mc https://dl.min.io/client/mc/release/linux-amd64/mc
           chmod +x mc
-          
-          # 验证客户端版本
-          ./mc --version
-          
-          # 配置连接
+          ./mc --version  # 输出版本号，便于排查
           ./mc alias set myminio http://14.103.235.216:9000 ${{ secrets.MINIO_ACCESS_KEY }} ${{ secrets.MINIO_SECRET_KEY }}
         continue-on-error: false
 
-      # 3. 同步文件到 MinIO
+      # 3. 同步文件（仅使用最基础的递归参数）
       - name: 同步项目文件到 MinIO
         run: |
           # 验证连接
           ./mc ls myminio
           
-          # 基础同步命令（仅保留兼容参数）
-          ./mc cp -r --force ./ myminio/mybucket/
+          # 核心修正：移除所有可能不支持的参数，仅保留 -r（递归）
+          # 旧版本 mc 会自动覆盖同名文件，无需强制参数
+          ./mc cp -r ./ myminio/mybucket/
         continue-on-error: false
     
