@@ -1,33 +1,74 @@
-name: 部署后端项目到 MinIO
+name: 部署到服务器并运行服务
 on:
   push:
-    branches: [ main ]
+    branches: [ main ]  # 推送到主分支时触发部署
+
 jobs:
-  deploy-to-minio:
+  deploy-and-run:
     runs-on: ubuntu-latest
     steps:
       # 1. 拉取代码
-      - name: 拉取代码
+      - name: 拉取最新代码
         uses: actions/checkout@v4
 
-      # 2. 安装 MinIO 客户端（使用官方最新版，避免过旧版本）
-      - name: 安装 MinIO 客户端
+      # 2. 编译项目（以Go为例，其他语言请调整）
+      - name: 编译应用程序
         run: |
-          # 强制重新下载最新版，避免缓存的旧版本
-          wget -O mc https://dl.min.io/client/mc/release/linux-amd64/mc
-          chmod +x mc
-          ./mc --version  # 输出版本号，便于排查
-          ./mc alias set myminio http://14.103.235.216:9000 ${{ secrets.MINIO_ACCESS_KEY }} ${{ secrets.MINIO_SECRET_KEY }}
-        continue-on-error: false
-
-      # 3. 同步文件（仅使用最基础的递归参数）
-      - name: 同步项目文件到 MinIO
-        run: |
-          # 验证连接
-          ./mc ls myminio
+          # 安装对应语言环境（Go示例）
+          go version || (apt-get update && apt-get install -y golang)
           
-          # 核心修正：移除所有可能不支持的参数，仅保留 -r（递归）
-          # 旧版本 mc 会自动覆盖同名文件，无需强制参数
-          ./mc cp -r ./ myminio/mybucket/
-        continue-on-error: false
+          # 处理依赖并编译
+          go mod tidy
+          go build -o app main.go  # 生成可执行文件app
+          
+          # 打包必要文件（程序+配置）
+          zip -r deploy.zip app configs/  # 根据实际文件调整
+
+      # 3. 部署到你的服务器并启动服务
+      - name: 部署到服务器
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SERVER_IP }}        # 你的服务器IP（在GitHub Secrets配置）
+          username: ${{ secrets.SERVER_USER }}  # 服务器登录用户（如root）
+          key: ${{ secrets.SSH_PRIVATE_KEY }}   # SSH私钥（用于免密登录）
+          port: ${{ secrets.SERVER_SSH_PORT || 22 }}  # SSH端口，默认22
+          
+          # 在服务器上执行的命令
+          script: |
+            # 服务器上的部署目录（提前创建好）
+            DEPLOY_PATH="/opt/my-service"
+            mkdir -p $DEPLOY_PATH
+            cd $DEPLOY_PATH
+            
+            # 备份当前运行的版本（可选，用于回滚）
+            if [ -f "app" ]; then
+              mv app app_backup_$(date +%Y%m%d_%H%M%S)
+            fi
+            
+            # 清除旧的部署包并接收新包
+            rm -f deploy.zip
+            scp -P ${{ secrets.SERVER_SSH_PORT || 22 }} ${{ github.workspace }}/deploy.zip $USER@$HOST:$DEPLOY_PATH/
+            unzip -o deploy.zip  # 强制解压覆盖
+            chmod +x app  # 确保可执行权限
+            
+            # 停止正在运行的服务（如果存在）
+            if pgrep -f "app" > /dev/null; then
+              pkill -f "app"
+              echo "已停止旧服务进程"
+              sleep 2  # 等待进程完全退出
+            fi
+            
+            # 启动新服务（nohup确保后台运行，不受终端关闭影响）
+            nohup ./app > service.log 2>&1 &
+            
+            # 验证服务是否启动成功
+            sleep 3
+            if pgrep -f "app" > /dev/null; then
+              echo "服务启动成功，进程ID: $(pgrep -f 'app')"
+              echo "日志路径: $DEPLOY_PATH/service.log"
+            else
+              echo "服务启动失败，查看日志:"
+              cat service.log
+              exit 1  # 启动失败则工作流报错
+            fi
     
