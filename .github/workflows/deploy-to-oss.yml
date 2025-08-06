@@ -41,7 +41,12 @@ jobs:
         run: |
           scp api-gateway/api-gateway ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:${{ secrets.DEPLOY_PATH }}/api-gateway/
           scp goods-server/goods-server ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:${{ secrets.DEPLOY_PATH }}/goods-server/
-          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "cd ${{ secrets.DEPLOY_PATH }} && ./deploy.sh"
+          
+      - name: 在服务器上启动应用
+        run: |
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "cd ${{ secrets.DEPLOY_PATH }}/api-gateway && chmod +x api-gateway && nohup ./api-gateway > api-gateway.log 2>&1 &"
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "cd ${{ secrets.DEPLOY_PATH }}/goods-server && chmod +x goods-server && nohup ./goods-server > goods-server.log 2>&1 &"
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "ps aux | grep -E 'api-gateway|goods-server'"
 
       - name: 部署完成通知
         run: echo "部署已完成！"
