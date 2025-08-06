@@ -37,21 +37,36 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
 
-      - name: 在服务器上创建目录
+      - name: 检查部署路径并创建目录
         run: |
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "echo 'DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}'"
           ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "mkdir -p ${{ secrets.DEPLOY_PATH }}/api-gateway"
           ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "mkdir -p ${{ secrets.DEPLOY_PATH }}/goods-server"
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "ls -la ${{ secrets.DEPLOY_PATH }}/"
           
       - name: 部署到服务器
         run: |
-          scp api-gateway/api-gateway ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:${{ secrets.DEPLOY_PATH }}/api-gateway/
-          scp goods-server/goods-server ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:${{ secrets.DEPLOY_PATH }}/goods-server/
+          scp api-gateway/api-gateway ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:"${{ secrets.DEPLOY_PATH }}/api-gateway/"
+          scp goods-server/goods-server ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:"${{ secrets.DEPLOY_PATH }}/goods-server/"
           
-      - name: 在服务器上启动应用
+      - name: 停止旧服务
         run: |
-          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "cd ${{ secrets.DEPLOY_PATH }}/api-gateway && chmod +x api-gateway && nohup ./api-gateway > api-gateway.log 2>&1 &"
-          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "cd ${{ secrets.DEPLOY_PATH }}/goods-server && chmod +x goods-server && nohup ./goods-server > goods-server.log 2>&1 &"
-          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "ps aux | grep -E 'api-gateway|goods-server'"
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "pkill -f api-gateway || true"
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "pkill -f goods-server || true"
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "sleep 2"
+          
+      - name: 启动API网关服务
+        run: |
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "cd ${{ secrets.DEPLOY_PATH }}/api-gateway && chmod +x api-gateway && setsid ./api-gateway > api-gateway.log 2>&1 < /dev/null &"
+          
+      - name: 启动商品服务
+        run: |
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "cd ${{ secrets.DEPLOY_PATH }}/goods-server && chmod +x goods-server && setsid ./goods-server > goods-server.log 2>&1 < /dev/null &"
+          
+      - name: 验证服务启动状态
+        run: |
+          sleep 3
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "ps aux | grep -E 'api-gateway|goods-server' | grep -v grep || echo '服务可能未正常启动，请检查日志文件'"
 
       - name: 部署完成通知
         run: echo "部署已完成！"
