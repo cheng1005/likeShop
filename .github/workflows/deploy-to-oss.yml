@@ -1,132 +1,47 @@
-name: 简化部署微服务
+name: 部署到服务器
+
 on:
   push:
     branches: [ main ]
   workflow_dispatch:
 
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: 拉取代码
-        uses: actions/checkout@v4
+      - name: 检出代码
+        uses: actions/checkout@v3
 
-      - name: 设置 Go 环境
+      - name: 设置Go环境
         uses: actions/setup-go@v4
         with:
-          go-version: '1.21'
+          go-version: '1.20'
 
-      # 编译服务
-      - name: 编译 API Gateway
+      - name: 构建API网关
         run: |
-          cd api-gateway/basic/cmd
-          CGO_ENABLED=0 GOOS=linux go build -o api-service main.go
-          mv api-service ../../../
+          cd api-gateway
+          go build -o api-gateway ./basic/cmd/main.go
 
-      - name: 编译 Goods Server
+      - name: 构建商品服务
         run: |
-          cd goods-server/basic/cmd
-          CGO_ENABLED=0 GOOS=linux go build -o server-service main.go
-          mv server-service ../../../
+          cd goods-server
+          go build -o goods-server ./basic/cmd/main.go
 
-      # 创建配置文件
-      - name: 创建配置文件
-        run: |
-          if [ ! -f "dev.yaml" ]; then
-            cat > dev.yaml << 'EOF'
-NacosConfig:
-  NamespaceId: b6187bf1-feed-4661-b632-1750ab22b543
-  IpAddr: 14.103.235.216
-  Port: 8848
-  DataId: xxfz
-  Group: shop_nacos
-EOF
-          fi
+      - name: 设置SSH密钥
+        uses: webfactory/ssh-agent@v0.7.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
-      # 打包部署文件
-      - name: 打包部署文件
-        run: |
-          for file in api-service server-service dev.yaml; do
-            if [ ! -f "$file" ]; then
-              echo "错误：$file 不存在"
-              exit 1
-            fi
-          done
-          tar -czf deploy.tar.gz api-service server-service dev.yaml
-
-      # 配置SSH
-      - name: 配置SSH
+      - name: 添加服务器到已知主机
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -p ${{ secrets.SERVER_SSH_PORT || 22 }} ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
+          ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
 
-      # 部署到服务器
       - name: 部署到服务器
         run: |
-          # 生成远程执行脚本，使用不同的分隔符避免冲突
-          cat > remote-deploy.sh << 'REMOTE_EOF'
-#!/bin/bash
-set -euo pipefail
-BASE_PATH="/opt/microservices"
+          scp api-gateway/api-gateway ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:${{ secrets.DEPLOY_PATH }}/api-gateway/
+          scp goods-server/goods-server ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:${{ secrets.DEPLOY_PATH }}/goods-server/
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "cd ${{ secrets.DEPLOY_PATH }} && ./deploy.sh"
 
-# 创建目录
-sudo mkdir -p "${BASE_PATH}/api" "${BASE_PATH}/server" "${BASE_PATH}/config"
-sudo chown -R "$USER":"$USER" "$BASE_PATH"
-
-# 解压
-cd /tmp
-tar -xzf deploy.tar.gz
-
-# 部署配置 - 使用不同的分隔符避免YAML解析问题
-if [ -f "dev.yaml" ]; then
-  cp dev.yaml "${BASE_PATH}/config/"
-else
-  # 使用更明确的分隔符和缩进
-  cat > "${BASE_PATH}/config/dev.yaml" << 'YAML_EOF'
-NacosConfig:
-  NamespaceId: b6187bf1-feed-4661-b632-1750ab22b543
-  IpAddr: 14.103.235.216
-  Port: 8848
-  DataId: xxfz
-  Group: shop_nacos
-YAML_EOF
-fi
-
-# 停止旧服务
-pkill -f "server-service" || true
-pkill -f "api-service" || true
-sleep 3
-
-# 部署服务
-cp server-service "${BASE_PATH}/server/"
-chmod +x "${BASE_PATH}/server/server-service"
-cd "${BASE_PATH}/server"
-nohup ./server-service --config "${BASE_PATH}/config/dev.yaml" > server.log 2>&1 &
-sleep 5
-
-cp /tmp/api-service "${BASE_PATH}/api/"
-chmod +x "${BASE_PATH}/api/api-service"
-cd "${BASE_PATH}/api"
-nohup ./api-service --config "${BASE_PATH}/config/dev.yaml" > api.log 2>&1 &
-
-# 验证
-sleep 3
-if pgrep -f "server-service" && pgrep -f "api-service"; then
-  echo "✅ 部署成功"
-else
-  echo "❌ 部署失败"
-  tail -10 "${BASE_PATH}/server/server.log"
-  tail -10 "${BASE_PATH}/api/api.log"
-  exit 1
-fi
-
-# 清理
-rm -f /tmp/deploy.tar.gz /tmp/api-service /tmp/server-service /tmp/dev.yaml
-REMOTE_EOF
-
-          # 传输并执行远程脚本
-          scp -P ${{ secrets.SERVER_SSH_PORT || 22 }} remote-deploy.sh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/tmp/
-          scp -P ${{ secrets.SERVER_SSH_PORT || 22 }} deploy.tar.gz ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/tmp/
-          ssh -p ${{ secrets.SERVER_SSH_PORT || 22 }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "bash /tmp/remote-deploy.sh"
+      - name: 部署完成通知
+        run: echo "部署已完成！"
