@@ -1,4 +1,4 @@
-name: 部署微服务（修复工作区访问问题）
+name: 部署微服务（修复版本）
 on:
   push:
     branches: [ main ]
@@ -16,69 +16,69 @@ jobs:
           echo "GitHub工作区路径: ${{ github.workspace }}"
           echo "当前目录: $(pwd)"
           echo "工作区文件列表："
-          ls -la ${{ github.workspace }}
+          ls -la
           echo "子目录列表："
-          find ${{ github.workspace }} -maxdepth 3 -type d
+          find . -maxdepth 3 -type d
+          echo "检查 dev.yaml 是否存在："
+          ls -la dev.yaml || echo "dev.yaml 不存在"
+
+      # 设置 Go 环境
+      - name: 设置 Go 环境
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
 
       # 编译 api-gateway 服务
       - name: 编译 api-gateway 服务
         run: |
-          API_DIR="${{ github.workspace }}/api-gateway/basic/cmd"
-          echo "检查 API 服务目录: $API_DIR"
-          if [ ! -d "$API_DIR" ]; then
-            echo "错误: API 服务目录 $API_DIR 不存在"
-            exit 1
-          fi
-          
-          cd "$API_DIR"
+          echo "编译 API Gateway 服务..."
+          cd api-gateway/basic/cmd
           go mod tidy
-          go build -o api-service main.go
+          CGO_ENABLED=0 GOOS=linux go build -o api-service main.go
           
-          # 生成压缩包到工作区根目录
-          zip -r "${{ github.workspace }}/api-deploy.zip" api-service
+          # 移动到工作区根目录并创建压缩包
+          mv api-service ${{ github.workspace }}/
+          cd ${{ github.workspace }}
+          zip api-deploy.zip api-service
           
-          # 验证压缩包是否生成
-          if [ ! -f "${{ github.workspace }}/api-deploy.zip" ]; then
+          # 验证压缩包
+          if [ ! -f "api-deploy.zip" ]; then
             echo "错误: API 压缩包未生成"
             exit 1
           fi
-          echo "API 压缩包已生成: ${{ github.workspace }}/api-deploy.zip"
+          echo "API 压缩包已生成"
+          ls -la api-deploy.zip
 
       # 编译 goods-server 服务
       - name: 编译 goods-server 服务
         run: |
-          SERVER_DIR="${{ github.workspace }}/goods-server/basic/cmd"
-          echo "检查 Server 服务目录: $SERVER_DIR"
-          if [ ! -d "$SERVER_DIR" ]; then
-            echo "错误: Server 服务目录 $SERVER_DIR 不存在"
-            exit 1
-          fi
-          
-          cd "$SERVER_DIR"
+          echo "编译 Goods Server 服务..."
+          cd goods-server/basic/cmd
           go mod tidy
-          go build -o server-service main.go
+          CGO_ENABLED=0 GOOS=linux go build -o server-service main.go
           
-          # 生成压缩包到工作区根目录
-          zip -r "${{ github.workspace }}/server-deploy.zip" server-service
+          # 移动到工作区根目录并创建压缩包
+          mv server-service ${{ github.workspace }}/
+          cd ${{ github.workspace }}
+          zip server-deploy.zip server-service
           
-          # 验证压缩包是否生成
-          if [ ! -f "${{ github.workspace }}/server-deploy.zip" ]; then
+          # 验证压缩包
+          if [ ! -f "server-deploy.zip" ]; then
             echo "错误: Server 压缩包未生成"
             exit 1
           fi
-          echo "Server 压缩包已生成: ${{ github.workspace }}/server-deploy.zip"
+          echo "Server 压缩包已生成"
+          ls -la server-deploy.zip
 
-      # 确认压缩包存在
-      - name: 确认压缩包存在
+      # 确认所有文件存在
+      - name: 确认部署文件
         run: |
           echo "工作区根目录文件列表："
-          ls -la ${{ github.workspace }}
-          echo "API压缩包信息："
-          ls -la ${{ github.workspace }}/api-deploy.zip || echo "API压缩包不存在"
-          echo "Server压缩包信息："
-          ls -la ${{ github.workspace }}/server-deploy.zip || echo "Server压缩包不存在"
+          ls -la
+          echo "检查必要文件："
+          ls -la api-deploy.zip server-deploy.zip dev.yaml || echo "某些文件不存在"
 
-      # 部署到服务器 - 使用SCP先传输文件，再执行部署脚本
+      # 传输文件到服务器
       - name: 传输文件到服务器
         uses: appleboy/scp-action@master
         with:
@@ -86,9 +86,11 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SERVER_SSH_PORT || 22 }}
-          source: "${{ github.workspace }}/api-deploy.zip,${{ github.workspace }}/server-deploy.zip,${{ github.workspace }}/dev.yaml"
-          target: "/tmp"
+          source: "api-deploy.zip,server-deploy.zip,dev.yaml"
+          target: "/tmp/"
+          strip_components: 0
 
+      # 在服务器上部署服务
       - name: 在服务器上部署服务
         uses: appleboy/ssh-action@master
         with:
@@ -97,69 +99,123 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SERVER_SSH_PORT || 22 }}
           script: |
+            set -e
             BASE_PATH="/opt/microservices"
-            mkdir -p $BASE_PATH/{api,server,config}
+            
+            # 创建目录结构
+            sudo mkdir -p $BASE_PATH/{api,server,config}
+            sudo chown -R $USER:$USER $BASE_PATH
             
             # 确认传输的文件
             echo "临时目录文件："
-            ls -la /tmp
+            ls -la /tmp/
             
             # 部署配置文件
             if [ -f "/tmp/dev.yaml" ]; then
               cp /tmp/dev.yaml $BASE_PATH/config/
               chmod 644 $BASE_PATH/config/dev.yaml
+              echo "配置文件已部署"
             else
-              echo "警告：配置文件 dev.yaml 未找到"
-              # 如果配置文件不是必须的，可以注释掉下面的exit 1
-              # exit 1
+              echo "警告：配置文件 dev.yaml 未找到，创建默认配置"
+              # 创建基本配置文件
+              cat > $BASE_PATH/config/dev.yaml << 'EOF'
+            server:
+              port: 8081
+            api:
+              port: 8080
+            consul:
+              host: "127.0.0.1"
+              port: 8500
+            EOF
             fi
+            
+            # 停止现有服务
+            pkill -f "server-service" || true
+            pkill -f "api-service" || true
+            sleep 3
             
             # 部署 server 服务
             if [ -f "/tmp/server-deploy.zip" ]; then
+              echo "部署 Server 服务..."
               cd $BASE_PATH/server
               cp /tmp/server-deploy.zip .
               unzip -o server-deploy.zip
               chmod +x server-service
-              pkill -f "server-service" || true
-              sleep 2
+              
+              # 启动 server 服务
               nohup ./server-service --config $BASE_PATH/config/dev.yaml > server.log 2>&1 &
+              echo "Server 服务已启动"
             else
               echo "错误：server-deploy.zip 未找到"
+              ls -la /tmp/
               exit 1
             fi
             
             # 等待 server 启动
-            for i in {1..15}; do
-              if pgrep -f "server-service" > /dev/null && nc -z localhost 8081; then
-                echo "server 服务已就绪"
-                break
+            echo "等待 Server 服务启动..."
+            for i in {1..30}; do
+              if pgrep -f "server-service" > /dev/null; then
+                echo "Server 服务进程已启动"
+                # 检查端口是否监听
+                if netstat -tuln | grep -q ":8081"; then
+                  echo "Server 服务端口已监听"
+                  break
+                fi
               fi
+              echo "等待中... ($i/30)"
               sleep 2
             done
             
             # 部署 api 服务
             if [ -f "/tmp/api-deploy.zip" ]; then
+              echo "部署 API 服务..."
               cd $BASE_PATH/api
               cp /tmp/api-deploy.zip .
               unzip -o api-deploy.zip
               chmod +x api-service
-              pkill -f "api-service" || true
-              sleep 2
+              
+              # 启动 api 服务
               nohup ./api-service --config $BASE_PATH/config/dev.yaml > api.log 2>&1 &
+              echo "API 服务已启动"
             else
               echo "错误：api-deploy.zip 未找到"
+              ls -la /tmp/
               exit 1
             fi
+            
+            # 等待 API 服务启动
+            echo "等待 API 服务启动..."
+            sleep 5
+            
+            # 验证服务状态
+            echo "验证服务状态..."
+            if pgrep -f "server-service" > /dev/null; then
+              echo "✓ Server 服务运行正常"
+            else
+              echo "✗ Server 服务未运行"
+              echo "Server 日志："
+              tail -20 $BASE_PATH/server/server.log || echo "无法读取日志"
+            fi
+            
+            if pgrep -f "api-service" > /dev/null; then
+              echo "✓ API 服务运行正常"
+            else
+              echo "✗ API 服务未运行"
+              echo "API 日志："
+              tail -20 $BASE_PATH/api/api.log || echo "无法读取日志"
+            fi
+            
+            # 显示端口监听状态
+            echo "端口监听状态："
+            netstat -tuln | grep -E ":(8080|8081)" || echo "未发现服务端口"
             
             # 清理临时文件
             rm -f /tmp/api-deploy.zip /tmp/server-deploy.zip /tmp/dev.yaml
             
-            # 验证服务
-            sleep 3
-            if pgrep -f "server-service" && pgrep -f "api-service"; then
-              echo "所有服务启动成功"
+            # 最终验证
+            if pgrep -f "server-service" > /dev/null && pgrep -f "api-service" > /dev/null; then
+              echo "🎉 所有服务部署成功！"
             else
-              cat $BASE_PATH/server/server.log
-              cat $BASE_PATH/api/api.log
+              echo "❌ 部分服务启动失败，请检查日志"
               exit 1
             fi
