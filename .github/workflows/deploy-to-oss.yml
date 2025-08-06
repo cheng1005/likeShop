@@ -16,28 +16,24 @@ jobs:
         with:
           go-version: '1.21'
 
-      - name: 编译服务
+      # 编译服务
+      - name: 编译 API Gateway
         run: |
-          # 编译 API Gateway
-          echo "编译 API Gateway..."
           cd api-gateway/basic/cmd
           CGO_ENABLED=0 GOOS=linux go build -o api-service main.go
           mv api-service ../../../
 
-          # 编译 Goods Server
-          echo "编译 Goods Server..."
-          cd ../../../goods-server/basic/cmd
+      - name: 编译 Goods Server
+        run: |
+          cd goods-server/basic/cmd
           CGO_ENABLED=0 GOOS=linux go build -o server-service main.go
           mv server-service ../../../
 
-          # 返回项目根目录
-          cd ../../..
-
-          # 检查并创建配置文件（严格保证 EOF 语法）
+      # 创建配置文件
+      - name: 创建配置文件
+        run: |
           if [ ! -f "dev.yaml" ]; then
-            echo "dev.yaml不存在，创建默认配置文件..."
-            # EOF 必须单独成行，且前后无多余字符
-            cat > dev.yaml << EOF
+            cat > dev.yaml << 'EOF'
 NacosConfig:
   NamespaceId: b6187bf1-feed-4661-b632-1750ab22b543
   IpAddr: 14.103.235.216
@@ -47,98 +43,90 @@ NacosConfig:
 EOF
           fi
 
-          # 显式检查文件存在性后打包
-          echo "创建部署包..."
+      # 打包部署文件
+      - name: 打包部署文件
+        run: |
           for file in api-service server-service dev.yaml; do
             if [ ! -f "$file" ]; then
-              echo "错误：$file 不存在，打包失败"
+              echo "错误：$file 不存在"
               exit 1
             fi
           done
           tar -czf deploy.tar.gz api-service server-service dev.yaml
-          ls -la deploy.tar.gz
 
-      - name: 部署到服务器
+      # 配置SSH
+      - name: 配置SSH
         run: |
-          # 初始化 SSH 环境
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -p ${{ secrets.SERVER_SSH_PORT || 22 }} ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
 
-          # 测试 SSH 连接
-          echo "测试 SSH 连接..."
-          ssh -o ConnectTimeout=30 -p ${{ secrets.SERVER_SSH_PORT || 22 }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "echo 'SSH 连接成功'"
+      # 部署到服务器
+      - name: 部署到服务器
+        run: |
+          # 生成远程执行脚本，使用不同的分隔符避免冲突
+          cat > remote-deploy.sh << 'REMOTE_EOF'
+#!/bin/bash
+set -euo pipefail
+BASE_PATH="/opt/microservices"
 
-          # 传输部署包
-          echo "传输部署包..."
-          scp -o ConnectTimeout=30 -P ${{ secrets.SERVER_SSH_PORT || 22 }} deploy.tar.gz ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/tmp/
+# 创建目录
+sudo mkdir -p "${BASE_PATH}/api" "${BASE_PATH}/server" "${BASE_PATH}/config"
+sudo chown -R "$USER":"$USER" "$BASE_PATH"
 
-          # 远程执行部署脚本（优化语法严格性）
-          echo "执行部署..."
-          ssh -o ConnectTimeout=30 -p ${{ secrets.SERVER_SSH_PORT || 22 }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} bash -s << 'EOF'
-            set -euo pipefail
-            BASE_PATH="/opt/microservices"
+# 解压
+cd /tmp
+tar -xzf deploy.tar.gz
 
-            # 确保目录存在
-            sudo mkdir -p "${BASE_PATH}/api" "${BASE_PATH}/server" "${BASE_PATH}/config"
-            sudo chown -R "$USER":"$USER" "$BASE_PATH"
-
-            # 解压部署包
-            cd /tmp
-            if [ ! -f "deploy.tar.gz" ]; then
-              echo "错误：部署包不存在"
-              exit 1
-            fi
-            tar -xzf deploy.tar.gz
-
-            # 部署配置文件
-            if [ -f "dev.yaml" ]; then
-              cp dev.yaml "${BASE_PATH}/config/"
-            else
-              echo "创建默认配置..."
-              # 同样保证 EOF 语法正确
-              cat > "${BASE_PATH}/config/dev.yaml" << EOF
+# 部署配置 - 使用不同的分隔符避免YAML解析问题
+if [ -f "dev.yaml" ]; then
+  cp dev.yaml "${BASE_PATH}/config/"
+else
+  # 使用更明确的分隔符和缩进
+  cat > "${BASE_PATH}/config/dev.yaml" << 'YAML_EOF'
 NacosConfig:
   NamespaceId: b6187bf1-feed-4661-b632-1750ab22b543
   IpAddr: 14.103.235.216
   Port: 8848
   DataId: xxfz
   Group: shop_nacos
-EOF
-            fi
+YAML_EOF
+fi
 
-            # 停止旧服务
-            pkill -f "server-service" || true
-            pkill -f "api-service" || true
-            sleep 3
+# 停止旧服务
+pkill -f "server-service" || true
+pkill -f "api-service" || true
+sleep 3
 
-            # 部署 Server 服务
-            cp server-service "${BASE_PATH}/server/"
-            chmod +x "${BASE_PATH}/server/server-service"
-            cd "${BASE_PATH}/server"
-            nohup ./server-service --config "${BASE_PATH}/config/dev.yaml" > server.log 2>&1 &
-            sleep 5
+# 部署服务
+cp server-service "${BASE_PATH}/server/"
+chmod +x "${BASE_PATH}/server/server-service"
+cd "${BASE_PATH}/server"
+nohup ./server-service --config "${BASE_PATH}/config/dev.yaml" > server.log 2>&1 &
+sleep 5
 
-            # 部署 API 服务
-            cp /tmp/api-service "${BASE_PATH}/api/"
-            chmod +x "${BASE_PATH}/api/api-service"
-            cd "${BASE_PATH}/api"
-            nohup ./api-service --config "${BASE_PATH}/config/dev.yaml" > api.log 2>&1 &
+cp /tmp/api-service "${BASE_PATH}/api/"
+chmod +x "${BASE_PATH}/api/api-service"
+cd "${BASE_PATH}/api"
+nohup ./api-service --config "${BASE_PATH}/config/dev.yaml" > api.log 2>&1 &
 
-            # 验证服务
-            sleep 3
-            if pgrep -f "server-service" && pgrep -f "api-service"; then
-              echo "✅ 所有服务部署成功！"
-            else
-              echo "❌ 服务启动失败"
-              echo "Server 日志："
-              tail -10 "${BASE_PATH}/server/server.log" || echo "无日志"
-              echo "API 日志："
-              tail -10 "${BASE_PATH}/api/api.log" || echo "无日志"
-              exit 1
-            fi
+# 验证
+sleep 3
+if pgrep -f "server-service" && pgrep -f "api-service"; then
+  echo "✅ 部署成功"
+else
+  echo "❌ 部署失败"
+  tail -10 "${BASE_PATH}/server/server.log"
+  tail -10 "${BASE_PATH}/api/api.log"
+  exit 1
+fi
 
-            # 清理临时文件
-            rm -f /tmp/deploy.tar.gz /tmp/api-service /tmp/server-service /tmp/dev.yaml
-          EOF
+# 清理
+rm -f /tmp/deploy.tar.gz /tmp/api-service /tmp/server-service /tmp/dev.yaml
+REMOTE_EOF
+
+          # 传输并执行远程脚本
+          scp -P ${{ secrets.SERVER_SSH_PORT || 22 }} remote-deploy.sh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/tmp/
+          scp -P ${{ secrets.SERVER_SSH_PORT || 22 }} deploy.tar.gz ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/tmp/
+          ssh -p ${{ secrets.SERVER_SSH_PORT || 22 }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "bash /tmp/remote-deploy.sh"
