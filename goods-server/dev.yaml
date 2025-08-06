@@ -1,0 +1,6 @@
+NacosConfig:
+  NamespaceId: b6187bf1-feed-4661-b632-1750ab22b543
+  IpAddr: 14.103.235.216
+  Port: 8848
+  DataId: xxfz
+  Group: shop_nacos
