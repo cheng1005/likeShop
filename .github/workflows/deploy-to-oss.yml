@@ -33,14 +33,14 @@ jobs:
           # 检查dev.yaml是否存在，如果不存在则创建默认配置
           if [ ! -f "dev.yaml" ]; then
             echo "dev.yaml不存在，创建默认配置文件..."
-            cat > dev.yaml << 'YAML'
+            cat > dev.yaml << EOF
 NacosConfig:
   NamespaceId: b6187bf1-feed-4661-b632-1750ab22b543
   IpAddr: 14.103.235.216
   Port: 8848
   DataId: xxfz
   Group: shop_nacos
-YAML
+EOF
           fi
           
           echo "创建部署包..."
@@ -67,13 +67,13 @@ YAML
           
           # 执行部署脚本
           echo "执行部署..."
-          ssh -o ConnectTimeout=30 -p ${{ secrets.SERVER_SSH_PORT || 22 }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} << 'EOF'
+          ssh -o ConnectTimeout=30 -p ${{ secrets.SERVER_SSH_PORT || 22 }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} << EOF
             set -e
             BASE_PATH="/opt/microservices"
             
             # 创建目录
-            sudo mkdir -p $BASE_PATH/{api,server,config}
-            sudo chown -R $USER:$USER $BASE_PATH
+            sudo mkdir -p \$BASE_PATH/{api,server,config}
+            sudo chown -R \$USER:\$USER \$BASE_PATH
             
             # 解压部署包
             cd /tmp
@@ -81,17 +81,17 @@ YAML
             
             # 部署配置文件
             if [ -f "dev.yaml" ]; then
-              cp dev.yaml $BASE_PATH/config/
+              cp dev.yaml \$BASE_PATH/config/
             else
               echo "创建默认配置..."
-              cat > $BASE_PATH/config/dev.yaml << 'YAML'
-          NacosConfig:
-            NamespaceId: b6187bf1-feed-4661-b632-1750ab22b543
-            IpAddr: 14.103.235.216
-            Port: 8848
-            DataId: xxfz
-            Group: shop_nacos
-          YAML
+              cat > \$BASE_PATH/config/dev.yaml << YAML
+NacosConfig:
+  NamespaceId: b6187bf1-feed-4661-b632-1750ab22b543
+  IpAddr: 14.103.235.216
+  Port: 8848
+  DataId: xxfz
+  Group: shop_nacos
+YAML
             fi
             
             # 停止现有服务
@@ -100,19 +100,19 @@ YAML
             sleep 3
             
             # 部署 server 服务
-            cp server-service $BASE_PATH/server/
-            chmod +x $BASE_PATH/server/server-service
-            cd $BASE_PATH/server
-            nohup ./server-service --config $BASE_PATH/config/dev.yaml > server.log 2>&1 &
+            cp server-service \$BASE_PATH/server/
+            chmod +x \$BASE_PATH/server/server-service
+            cd \$BASE_PATH/server
+            nohup ./server-service --config \$BASE_PATH/config/dev.yaml > server.log 2>&1 &
             
             # 等待 server 启动
             sleep 5
             
             # 部署 api 服务
-            cp /tmp/api-service $BASE_PATH/api/
-            chmod +x $BASE_PATH/api/api-service
-            cd $BASE_PATH/api
-            nohup ./api-service --config $BASE_PATH/config/dev.yaml > api.log 2>&1 &
+            cp /tmp/api-service \$BASE_PATH/api/
+            chmod +x \$BASE_PATH/api/api-service
+            cd \$BASE_PATH/api
+            nohup ./api-service --config \$BASE_PATH/config/dev.yaml > api.log 2>&1 &
             
             # 验证服务
             sleep 3
@@ -121,12 +121,13 @@ YAML
             else
               echo "❌ 服务启动失败"
               echo "Server 日志："
-              tail -10 $BASE_PATH/server/server.log || echo "无日志"
+              tail -10 \$BASE_PATH/server/server.log || echo "无日志"
               echo "API 日志："
-              tail -10 $BASE_PATH/api/api.log || echo "无日志"
+              tail -10 \$BASE_PATH/api/api.log || echo "无日志"
               exit 1
             fi
             
             # 清理
             rm -f /tmp/deploy.tar.gz /tmp/api-service /tmp/server-service /tmp/dev.yaml
-          EOF
+EOF
+    
