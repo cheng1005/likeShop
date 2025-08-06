@@ -33,26 +33,25 @@ jobs:
           # 返回项目根目录
           cd ../../..
 
-          # 检查并创建配置文件（严格控制缩进和分界符）
+          # 检查并创建配置文件（严格保证 EOF 语法）
           if [ ! -f "dev.yaml" ]; then
             echo "dev.yaml不存在，创建默认配置文件..."
-            cat > dev.yaml <<- EOF
-              NacosConfig:
-                NamespaceId: b6187bf1-feed-4661-b632-1750ab22b543
-                IpAddr: 14.103.235.216
-                Port: 8848
-                DataId: xxfz
-                Group: shop_nacos
-            EOF
-            # 去除配置文件多余缩进（保证 YAML 格式正确）
-            sed -i 's/^  //' dev.yaml
+            # EOF 必须单独成行，且前后无多余字符
+            cat > dev.yaml << EOF
+NacosConfig:
+  NamespaceId: b6187bf1-feed-4661-b632-1750ab22b543
+  IpAddr: 14.103.235.216
+  Port: 8848
+  DataId: xxfz
+  Group: shop_nacos
+EOF
           fi
 
-          # 创建部署包（显式检查文件存在性）
+          # 显式检查文件存在性后打包
           echo "创建部署包..."
           for file in api-service server-service dev.yaml; do
             if [ ! -f "$file" ]; then
-              echo "错误：$file 不存在，无法打包"
+              echo "错误：$file 不存在，打包失败"
               exit 1
             fi
           done
@@ -75,13 +74,13 @@ jobs:
           echo "传输部署包..."
           scp -o ConnectTimeout=30 -P ${{ secrets.SERVER_SSH_PORT || 22 }} deploy.tar.gz ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:/tmp/
 
-          # 远程执行部署脚本（优化变量作用域和语法）
+          # 远程执行部署脚本（优化语法严格性）
           echo "执行部署..."
           ssh -o ConnectTimeout=30 -p ${{ secrets.SERVER_SSH_PORT || 22 }} ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} bash -s << 'EOF'
             set -euo pipefail
             BASE_PATH="/opt/microservices"
 
-            # 确保目录结构存在
+            # 确保目录存在
             sudo mkdir -p "${BASE_PATH}/api" "${BASE_PATH}/server" "${BASE_PATH}/config"
             sudo chown -R "$USER":"$USER" "$BASE_PATH"
 
@@ -98,18 +97,18 @@ jobs:
               cp dev.yaml "${BASE_PATH}/config/"
             else
               echo "创建默认配置..."
-              cat > "${BASE_PATH}/config/dev.yaml" <<- YAML
-                NacosConfig:
-                  NamespaceId: b6187bf1-feed-4661-b632-1750ab22b543
-                  IpAddr: 14.103.235.216
-                  Port: 8848
-                  DataId: xxfz
-                  Group: shop_nacos
-              YAML
-              sed -i 's/^  //' "${BASE_PATH}/config/dev.yaml"
+              # 同样保证 EOF 语法正确
+              cat > "${BASE_PATH}/config/dev.yaml" << EOF
+NacosConfig:
+  NamespaceId: b6187bf1-feed-4661-b632-1750ab22b543
+  IpAddr: 14.103.235.216
+  Port: 8848
+  DataId: xxfz
+  Group: shop_nacos
+EOF
             fi
 
-            # 停止旧服务（安全退出）
+            # 停止旧服务
             pkill -f "server-service" || true
             pkill -f "api-service" || true
             sleep 3
@@ -119,7 +118,7 @@ jobs:
             chmod +x "${BASE_PATH}/server/server-service"
             cd "${BASE_PATH}/server"
             nohup ./server-service --config "${BASE_PATH}/config/dev.yaml" > server.log 2>&1 &
-            sleep 5  # 延长启动等待时间
+            sleep 5
 
             # 部署 API 服务
             cp /tmp/api-service "${BASE_PATH}/api/"
@@ -127,7 +126,7 @@ jobs:
             cd "${BASE_PATH}/api"
             nohup ./api-service --config "${BASE_PATH}/config/dev.yaml" > api.log 2>&1 &
 
-            # 验证服务状态（更健壮的检查）
+            # 验证服务
             sleep 3
             if pgrep -f "server-service" && pgrep -f "api-service"; then
               echo "✅ 所有服务部署成功！"
