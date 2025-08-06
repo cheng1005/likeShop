@@ -37,17 +37,21 @@ jobs:
           mkdir -p ~/.ssh
           ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
 
+      - name: 设置部署路径
+        run: |
+          echo "DEPLOY_PATH=${{ secrets.DEPLOY_PATH || '/opt/likeShop' }}" >> $GITHUB_ENV
+          
       - name: 检查部署路径并创建目录
         run: |
-          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "echo 'DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}'"
-          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "mkdir -p ${{ secrets.DEPLOY_PATH }}/api-gateway"
-          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "mkdir -p ${{ secrets.DEPLOY_PATH }}/goods-server"
-          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "ls -la ${{ secrets.DEPLOY_PATH }}/"
+          echo "使用部署路径: $DEPLOY_PATH"
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "mkdir -p $DEPLOY_PATH/api-gateway"
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "mkdir -p $DEPLOY_PATH/goods-server"
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "ls -la $DEPLOY_PATH/"
           
       - name: 部署到服务器
         run: |
-          scp api-gateway/api-gateway ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:"${{ secrets.DEPLOY_PATH }}/api-gateway/"
-          scp goods-server/goods-server ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:"${{ secrets.DEPLOY_PATH }}/goods-server/"
+          scp api-gateway/api-gateway ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:"$DEPLOY_PATH/api-gateway/"
+          scp goods-server/goods-server ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }}:"$DEPLOY_PATH/goods-server/"
           
       - name: 停止旧服务
         run: |
@@ -57,11 +61,11 @@ jobs:
           
       - name: 启动API网关服务
         run: |
-          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "cd ${{ secrets.DEPLOY_PATH }}/api-gateway && chmod +x api-gateway && setsid ./api-gateway > api-gateway.log 2>&1 < /dev/null &"
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "cd $DEPLOY_PATH/api-gateway && chmod +x api-gateway && setsid ./api-gateway > api-gateway.log 2>&1 < /dev/null &"
           
       - name: 启动商品服务
         run: |
-          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "cd ${{ secrets.DEPLOY_PATH }}/goods-server && chmod +x goods-server && setsid ./goods-server > goods-server.log 2>&1 < /dev/null &"
+          ssh ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_IP }} "cd $DEPLOY_PATH/goods-server && chmod +x goods-server && setsid ./goods-server > goods-server.log 2>&1 < /dev/null &"
           
       - name: 验证服务启动状态
         run: |
